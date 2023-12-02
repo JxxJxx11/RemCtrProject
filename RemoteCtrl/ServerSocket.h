@@ -1,113 +1,20 @@
 #pragma once
 #include "pch.h"
 #include "framework.h"
+#include "CPacket.h"
 
-#pragma pack(push)
-#pragma pack(1)
-class CPacket {
-public:
-	CPacket():sHead(0), nLength(0), sCmd(0), sSum(0){}
+typedef struct MouseEvent{
+	MouseEvent() {
+		nAction = 0;
+		nButton = -1;
+		ptXY.x = 0;
+		ptXY.y = 0;
 
-	CPacket(WORD nCmd, const BYTE* pData, size_t nSize) {
-		sHead = 0xFEFF;
-		nLength = nSize + 4;
-		sCmd = nCmd;
-		strData.resize(nSize);
-		memcpy((void*)strData.c_str(), pData, nSize);
-		sSum = 0;
-		for (int j = 0; j < strData.size(); j++) {
-			sSum += BYTE(strData[j]) & 0xFF;
-		}
 	}
-
-	CPacket(const CPacket& pack) {
-		sHead = pack.sHead;
-		nLength = pack.nLength;
-		sCmd = pack.sCmd;
-		strData = pack.strData;
-		sSum = pack.sSum;
-	}
-
-	CPacket(const BYTE* pData, size_t& nSize) {
-		size_t i = 0;
-		for (; i < nSize; i++) {
-			if (*(WORD*)(pData + i) == 0xFEFF) {
-				sHead = *(WORD*)(pData + i);
-				i += 2;
-				break;
-			}
-		}
-		if (i+4+2+2 > nSize) {
-			nSize = 0;
-			return;
-		}
-		nLength = *(DWORD*)(pData + i);
-		i += 4;
-		if (nLength + i > nSize) {
-			nSize = 0;
-			return;
-		}
-		sCmd = *(WORD*)(pData + i);
-		i += 2;
-		if (nLength > 4) {
-			strData.resize(nLength - 2 - 2);
-			memcpy((void*)strData.c_str(), pData + i, nLength - 4);
-			i += nLength - 4;
-		}
-		sSum = *(WORD*)(pData + i);
-		i += 2;
-		WORD sum = 0;
-		for (int j = 0; j < strData.size(); j++) {
-			sum += BYTE(strData[j]) & 0xFF;
-		}
-		if (sum == sSum) {
-			nSize = i;
-			return;
-		}
-		nSize = 0;
-	}
-
-	~CPacket(){}
-
-	CPacket& operator=(const CPacket& pack) {
-		if (this != &pack) {
-			sHead = pack.sHead;
-			nLength = pack.nLength;
-			sCmd = pack.sCmd;
-			strData = pack.strData;
-			sSum = pack.sSum;
-		}
-		return *this;
-	}
-
-	int Size() {
-		return nLength + 6;
-	}
-
-	const char* Data() {
-		strOut.resize(nLength + 6);
-		BYTE* pData = (BYTE*)strOut.c_str();
-		*(WORD*)pData = sHead;
-		pData += 2;
-		*(DWORD*)(pData) = nLength;
-		pData += 4;
-		*(WORD*)pData = sCmd;
-		pData += 2;
-		memcpy(pData, strData.c_str(), strData.size());
-		pData += strData.size();
-		*(WORD*)pData = sSum;
-		return strOut.c_str();
-	}
-
-public:
-	WORD sHead;
-	DWORD nLength;
-	WORD sCmd;
-	std::string strData;
-	WORD sSum;
-	std::string strOut;
-};
-#pragma pack(pop)
+	WORD nAction;
+	WORD nButton;
+	POINT ptXY;
+}MOUSEEV, *PMOUSEEV;
 
 class CServerSocket
 {
@@ -180,6 +87,22 @@ public:
 		return send(m_client, pack.Data(), pack.Size(), 0) > 0;
 	}
 
+	bool GetFilePath(std::string& strPath) {
+		if (m_packet.sCmd >= 2 && m_packet.sCmd <= 4) {
+			strPath = m_packet.strData;
+			return true;
+		}
+		return false;
+	}
+
+	bool GetMouseEvent(MOUSEEV& mouse) {
+		if (m_packet.sCmd == 5) {
+			memcpy(&mouse, m_packet.strData.c_str(), sizeof(MOUSEEV));
+			return true;
+		}
+		return false;
+	}
+
 private:
 	SOCKET m_sock;
 	SOCKET m_client;
@@ -204,7 +127,7 @@ private:
 	BOOL InitSockEnv() {
 		WSADATA data;
 		if (WSAStartup(MAKEWORD(1, 1), &data) != 0) {
-			return FALSE;
+			return false;
 		}
 		return true;
 	}
